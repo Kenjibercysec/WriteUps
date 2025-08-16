@@ -1,4 +1,4 @@
-# Eureka HTB Writeup - HackTheBox - LazyHackers
+# Eureka HTB Writeup 
 
 **Difficulty:** Hard\
 **OS:** Linux\
